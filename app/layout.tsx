@@ -1,6 +1,10 @@
 import { Analytics } from '@vercel/analytics/next'
 import type { Metadata, Viewport } from 'next'
+import { Lato, Playfair_Display } from 'next/font/google'
 import './globals.css'
+
+const playfair = Playfair_Display({ subsets: ['latin'], variable: '--font-playfair' })
+const lato = Lato({ subsets: ['latin'], weight: ['400', '700', '900'], variable: '--font-lato' })
 
 export const metadata: Metadata = {
   title: 'The Syncretic Guest House | Bengaluru',
@@ -40,7 +44,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body className="antialiased">
+      <body className={`${playfair.variable} ${lato.variable} antialiased`}>
         {children}
         {process.env.NODE_ENV === 'production' && <Analytics />}
       </body>

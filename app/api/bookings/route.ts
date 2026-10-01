@@ -1,33 +1,46 @@
 import { NextResponse } from 'next/server'
-import { Pool } from 'pg'
+import { ZodError } from 'zod'
+import { createAdminClient } from '@/lib/supabase/admin'
+import { requireStaff } from '@/lib/supabase/server'
+import { bookingInput } from '@/lib/validation'
 
-const pool = new Pool({ connectionString: process.env.DATABASE_URL })
-const prices = { 'Double Room': 1400, 'Superior Room': 1600 } as const
+export const runtime = 'nodejs'
+
+function errorResponse(error: unknown) {
+  if (error instanceof ZodError) return NextResponse.json({ error: 'Please check the booking details.', fields: error.flatten().fieldErrors }, { status: 400 })
+  if (error instanceof Error && error.message === 'UNAUTHENTICATED') return NextResponse.json({ error: 'Sign in is required.' }, { status: 401 })
+  if (error instanceof Error && error.message === 'FORBIDDEN') return NextResponse.json({ error: 'You are not allowed to perform that action.' }, { status: 403 })
+  return NextResponse.json({ error: 'Booking service is not configured or is temporarily unavailable.' }, { status: 503 })
+}
 
 export async function GET() {
-  const result = await pool.query('SELECT id, booking_code, guest_name, guest_phone, guest_email, room_type, check_in, check_out, guests, amount, payment_method, payment_status, status, document_url, source, created_at FROM public.hotel_bookings ORDER BY created_at DESC')
-  return NextResponse.json(result.rows)
+  try {
+    const { supabase } = await requireStaff()
+    const { data, error } = await supabase
+      .from('bookings')
+      .select('booking_reference, check_in, check_out, total_amount, amount_paid, payment_status, status, source, guests(full_name, phone), booking_rooms(rooms(room_number, category))')
+      .order('created_at', { ascending: false })
+      .limit(100)
+    if (error) throw error
+    return NextResponse.json(data)
+  } catch (error) { return errorResponse(error) }
 }
 
 export async function POST(request: Request) {
-  const body = await request.json()
-  const { guestName, phone, email, roomType, checkIn, checkOut, guests = 1, paymentMethod = 'Pay at hotel', documentUrl = null, source = 'website' } = body
-  if (!guestName || !phone || !roomType || !checkIn || !checkOut || !(roomType in prices)) return NextResponse.json({ error: 'Please complete all booking details.' }, { status: 400 })
-  if (new Date(checkOut) <= new Date(checkIn)) return NextResponse.json({ error: 'Check-out must be after check-in.' }, { status: 400 })
-  const availability = await pool.query("SELECT COUNT(*)::int AS count FROM public.hotel_bookings WHERE room_type = $1 AND status IN ('pending','confirmed','checked_in') AND check_in < $3 AND check_out > $2", [roomType, checkIn, checkOut])
-  const capacity = roomType === 'Double Room' ? 7 : 7
-  if (availability.rows[0].count >= capacity) return NextResponse.json({ error: 'No rooms are available for those dates.' }, { status: 409 })
-  const bookingCode = `SYN-${Math.random().toString(36).slice(2, 8).toUpperCase()}`
-  const paymentStatus = paymentMethod === 'Pay at hotel' ? 'pay_at_hotel' : 'pending'
-  const result = await pool.query('INSERT INTO public.hotel_bookings (booking_code, guest_name, guest_phone, guest_email, room_type, check_in, check_out, guests, amount, payment_method, payment_status, status, document_url, source) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING booking_code, amount, room_type, check_in, check_out, payment_method, payment_status, status', [bookingCode, guestName, phone, email || null, roomType, checkIn, checkOut, Number(guests), prices[roomType as keyof typeof prices], paymentMethod, paymentStatus, paymentMethod === 'Pay at hotel' ? 'confirmed' : 'pending', documentUrl, source])
-  return NextResponse.json({ booking: result.rows[0], paymentRequired: paymentMethod !== 'Pay at hotel', message: paymentMethod === 'Pay at hotel' ? 'Booking confirmed.' : 'Room held. Complete payment to confirm.' }, { status: 201 })
-}
-
-export async function PATCH(request: Request) {
-  const body = await request.json()
-  const allowed = ['pending', 'paid', 'failed', 'pay_at_hotel']
-  if (!body.bookingCode || !allowed.includes(body.paymentStatus)) return NextResponse.json({ error: 'Invalid payment update.' }, { status: 400 })
-  const result = await pool.query("UPDATE public.hotel_bookings SET payment_status = $1, status = CASE WHEN $1 = 'paid' THEN 'confirmed' ELSE status END WHERE booking_code = $2 RETURNING booking_code, payment_status, status", [body.paymentStatus, body.bookingCode])
-  if (!result.rowCount) return NextResponse.json({ error: 'Booking not found.' }, { status: 404 })
-  return NextResponse.json({ booking: result.rows[0] })
+  try {
+    const input = bookingInput.parse(await request.json())
+    const supabase = createAdminClient()
+    const { data, error } = await supabase.rpc('create_booking_hold', {
+      p_guest_name: input.guestName, p_phone: input.phone, p_email: input.email || '', p_room_id: input.roomId,
+      p_check_in: input.checkIn, p_check_out: input.checkOut, p_adults: input.adults, p_children: input.children,
+      p_special_requests: input.specialRequests || null,
+    })
+    if (error) {
+      if (error.message.includes('ROOM_UNAVAILABLE')) return NextResponse.json({ error: 'That room is no longer available for these dates.' }, { status: 409 })
+      throw error
+    }
+    const booking = data?.[0]
+    if (!booking) throw new Error('Booking hold was not returned.')
+    return NextResponse.json({ booking, message: 'Your room is held for 15 minutes. Payment is required to confirm it.' }, { status: 201 })
+  } catch (error) { return errorResponse(error) }
 }

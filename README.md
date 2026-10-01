@@ -8,7 +8,7 @@ Next.js booking application with Supabase PostgreSQL/Auth/Storage and Razorpay p
 - Server-side availability checks and 15-minute booking holds.
 - PostgreSQL schema, indexes, RLS policies, audit-log table, private document bucket, and development room seed data.
 - Razorpay order creation, browser-signature verification, signed webhook verification, and idempotent payment recording.
-- Manager email magic-link/OTP sign-in through Supabase Auth—no SMS provider required.
+- Fixed manager username/password sign-in through Supabase Auth—no SMS provider required.
 - Staff-only manager route and API reads; public visitors cannot call manager booking APIs.
 
 ## Required free-tier services
@@ -39,7 +39,7 @@ Next.js booking application with Supabase PostgreSQL/Auth/Storage and Razorpay p
 3. Set `NEXT_PUBLIC_APP_URL` to `https://thesyncretic.vercel.app` in Production.
 4. Deploy. Then add that URL to Supabase Auth redirect URLs and register `https://thesyncretic.vercel.app/api/payments/razorpay/webhook` in Razorpay.
 
-The manager is fixed as a staff record—not a self-sign-up user. Create `thesyncretic123@gmail.com` in Supabase Auth, assign the `manager` profile role, and use `/manager/login` to send the email sign-in link. The application deliberately uses `shouldCreateUser: false`, so unknown addresses cannot create accounts.
+The manager is fixed as a staff record—not a self-sign-up user. Create `thesyncretic123@gmail.com` in Supabase Auth with the manager password, assign the `manager` profile role, and use `/manager/login` with username `jayanta`. The application does not create accounts or store the password.
 
 ## Run and verify
 

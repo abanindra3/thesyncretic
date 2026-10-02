@@ -10,7 +10,7 @@ begin
   if p_check_out <= p_check_in then raise exception 'INVALID_DATES'; end if;
   select base_price into v_price from rooms where id = p_room_id and active for update;
   if v_price is null then raise exception 'ROOM_UNAVAILABLE'; end if;
-  delete from bookings where status = 'hold' and hold_expires_at < now();
+  delete from bookings b where b.status = 'hold' and b.hold_expires_at < now();
   if exists (select 1 from booking_rooms br join bookings b on b.id = br.booking_id where br.room_id = p_room_id and b.status not in ('cancelled','expired') and daterange(p_check_in,p_check_out,'[)') && br.stay) then raise exception 'ROOM_UNAVAILABLE'; end if;
   insert into guests(full_name,phone,email) values (p_guest_name,p_phone,nullif(p_email,'')) on conflict(phone) do update set full_name=excluded.full_name,email=coalesce(excluded.email,guests.email),updated_at=now() returning id into v_guest_id;
   v_nights := p_check_out - p_check_in;
@@ -24,3 +24,6 @@ begin
   if v_status = 'confirmed' then insert into payments(booking_id,amount,method,status) values(v_booking_id,v_price*v_nights,'pay_at_hotel','pay_at_hotel'); end if;
   total_amount := v_price*v_nights; hold_expires_at := v_expiry; booking_status := v_status; return next;
 end $$;
+
+grant execute on function public.create_booking_hold(text, text, text, uuid, date, date, smallint, smallint, text, public.booking_source, text, uuid) to anon, authenticated, service_role;
+notify pgrst, 'reload schema';

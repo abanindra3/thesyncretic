@@ -39,7 +39,7 @@ export async function POST(request: Request) {
     }
     const supabase = createAdminClient()
     const { data, error } = await supabase.rpc('create_booking_hold', {
-      p_guest_name: input.guestName, p_phone: input.phone, p_email: input.email || '', p_room_id: input.roomId,
+      p_guest_name: input.guestName, p_phone: input.phone, p_email: input.email, p_room_id: input.roomId,
       p_check_in: input.checkIn, p_check_out: input.checkOut, p_adults: input.adults, p_children: input.children,
       p_special_requests: input.specialRequests || null, p_source: isManagerBooking ? requestedSource : 'website',
       p_payment_policy: input.paymentPolicy, p_created_by: createdBy,
@@ -61,6 +61,11 @@ export async function PATCH(request: Request) {
     const reference = typeof body.bookingReference === 'string' ? body.bookingReference : ''
     const status = typeof body.status === 'string' ? body.status : ''
     if (!/^SYN-[A-Z0-9]{8}$/.test(reference) || !['confirmed', 'checked_in', 'checked_out', 'cancelled'].includes(status)) return NextResponse.json({ error: 'Invalid booking update.' }, { status: 400 })
+    if (status === 'checked_in') {
+      const { data: bookingForDocument } = await supabase.from('bookings').select('id').eq('booking_reference', reference).single()
+      const { count } = bookingForDocument ? await supabase.from('guest_documents').select('id', { count: 'exact', head: true }).eq('booking_id', bookingForDocument.id) : { count: 0 }
+      if (!count) return NextResponse.json({ error: 'Upload a guest identity document before checking in.' }, { status: 400 })
+    }
     const { data, error } = await supabase.from('bookings').update({ status, ...(status === 'cancelled' ? { cancelled_at: new Date().toISOString() } : {}) }).eq('booking_reference', reference).select('id, booking_reference, status').single()
     if (error) throw error
     await supabase.from('audit_logs').insert({ user_id: user.id, action: `booking_${status}`, entity_type: 'booking', entity_id: data.id, metadata: { booking_reference: reference } })

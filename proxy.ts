@@ -3,7 +3,7 @@ import { NextResponse, type NextRequest } from 'next/server'
 
 export async function proxy(request: NextRequest) {
   // The sign-in screen must remain reachable so a staff member can request an OTP.
-  if (request.nextUrl.pathname === '/manager/login') return NextResponse.next()
+  if (request.nextUrl.pathname === '/manager/login' || request.nextUrl.pathname === '/my-bookings/login') return NextResponse.next()
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL
   const key = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY
   if (!url || !key) return NextResponse.redirect(new URL('/manager/login?error=configuration_required', request.url))
@@ -15,8 +15,8 @@ export async function proxy(request: NextRequest) {
     },
   })
   const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return NextResponse.redirect(new URL('/manager/login', request.url))
+  if (!user) return NextResponse.redirect(new URL(request.nextUrl.pathname.startsWith('/my-bookings') ? '/my-bookings/login' : '/manager/login', request.url))
   return response
 }
 
-export const config = { matcher: ['/manager/:path*'] }
+export const config = { matcher: ['/manager/:path*', '/my-bookings/:path*'] }

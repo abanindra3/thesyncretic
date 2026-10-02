@@ -3,7 +3,9 @@ import { z } from 'zod'
 export const bookingInput = z.object({
   guestName: z.string().trim().min(2).max(120),
   phone: z.string().trim().regex(/^[+0-9][0-9 -]{7,19}$/),
-  email: z.email().optional().or(z.literal('')),
+  // A verified email creates the guest's account and gives them access to
+  // their receipt and booking history. Phone is also required above.
+  email: z.email(),
   roomId: z.uuid(),
   checkIn: z.iso.date(),
   checkOut: z.iso.date(),
